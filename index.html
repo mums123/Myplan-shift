@@ -10,7 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
-<!-- کدهای تقویم شمسی به صورت داخلی (آفلاین) -->
+<!-- کدهای تقویم شمسی (آفلاین) -->
 <script>
 var jalaali = (function() {
     var breaks = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
@@ -38,11 +38,23 @@ var jalaali = (function() {
 </script>
 
 <script>
-  const APP_VERSION = "50.0.0"; 
+  const APP_VERSION = "52.0.0"; 
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+      for(let registration of registrations) { registration.unregister(); }
+    });
+  }
   if (localStorage.getItem('app_version') !== APP_VERSION) {
-    if ('caches' in window) caches.keys().then(names => names.forEach(n => caches.delete(n)));
-    localStorage.setItem('app_version', APP_VERSION);
-    if (localStorage.getItem('app_version') !== null) window.location.reload(true);
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        for (let name of names) caches.delete(name);
+        localStorage.setItem('app_version', APP_VERSION);
+        window.location.reload(true);
+      });
+    } else {
+      localStorage.setItem('app_version', APP_VERSION);
+      window.location.reload(true);
+    }
   }
 </script>
 
@@ -395,7 +407,7 @@ function countFridayDays(person) { let c = 0; for (let d = 0; d < DAYS; d++) if 
 async function onShiftChange(sel) {
   const key = sel.dataset.key, val = sel.value, d = +sel.dataset.day, zone = sel.dataset.zone, shiftType = sel.dataset.shift, prevOwner = state.shifts[key] || "";
   if (!isAdmin && val && val !== currentUser.name) { alertDlg("فقط شیفت خودتان را تغییر دهید."); sel.value = prevOwner; return; }
-  if (!val) { if (prevOwner) { const p = PERSONNEL.find(x => x.name === prevOwner); if (p) await sb.from("shifts").delete().eq("day", d).eq("zone", zone).eq("shift_type", shiftType).eq("user_id", p.id); delete state.shifts[key]; renderAll(); alertDlg("شیفت حذف شد."); } return; }
+  if (!val) { if (prevOwner) { const p = PERSONNEL.find(x => x.name === prevOwner); if (p) await sb.from("shifts").delete().eq("day", d).eq("zone", zone).eq("shift_type", shiftType).eq("user_id", p.id); delete state.shifts[key]; renderAll(); await sb.from("audit_logs").insert({ user_id: currentUser.id, action: "حذف شیفت", details: { zone: zone, type: shiftType, day: d } }); alertDlg("شیفت حذف شد."); } return; }
   const targetPerson = PERSONNEL.find(x => x.name === val); if (!targetPerson) { sel.value = prevOwner; return; }
   const todayShifts = findPersonShiftOnDay(val, d), simulatedToday = [...todayShifts, shiftType], uniqToday = [...new Set(simulatedToday)];
   const prevShifts = d > 0 ? findPersonShiftOnDay(val, d - 1) : [], nextShifts = d < DAYS - 1 ? findPersonShiftOnDay(val, d + 1) : [];
@@ -415,7 +427,7 @@ async function onShiftChange(sel) {
     if (prevOwner) { const oldP = PERSONNEL.find(x => x.name === prevOwner); if (oldP) await sb.from("shifts").delete().eq("day", d).eq("zone", zone).eq("shift_type", shiftType).eq("user_id", oldP.id); }
     const { error } = await sb.from("shifts").insert({ day: d, zone, shift_type: shiftType, user_id: targetPerson.id });
     if (error) { if (error.code === "23505") { await alertDlg("این شیفت گرفته شد."); await loadAll(); renderAll(); } else await alertDlg("خطا: " + error.message); sel.value = prevOwner; return; }
-    state.shifts[key] = val; sel.classList.toggle("mine", !isAdmin && val === currentUser.name); alertDlg("شیفت ثبت شد."); renderStats();
+    state.shifts[key] = val; sel.classList.toggle("mine", !isAdmin && val === currentUser.name); await sb.from("audit_logs").insert({ user_id: currentUser.id, action: "ثبت شیفت", details: { zone: zone, type: shiftType, day: d, target: val } }); alertDlg("شیفت ثبت شد."); renderStats();
   } catch (e) { await alertDlg("خطا: " + e.message); sel.value = prevOwner; }
 }
 function renderLeaves() {
@@ -445,7 +457,7 @@ async function onLeaveChange(person, sel, td) {
   const pObj = PERSONNEL.find(x => x.name === person); if (!pObj) return;
   if (!newDayVal) {
     const old = state.leaves[person] || {};
-    for (const day of Object.keys(old)) { if (!newLeaves[day]) { await sb.from("leaves").delete().eq("day", parseInt(day)).eq("user_id", pObj.id); delete old[day]; } }
+    for (const day of Object.keys(old)) { if (!newLeaves[day]) { await sb.from("leaves").delete().eq("day", parseInt(day)).eq("user_id", pObj.id); await sb.from("audit_logs").insert({ user_id: currentUser.id, action: "حذف مرخصی", details: { target: person, day: parseInt(day) } }); delete old[day]; } }
     if (Object.keys(old).length === 0) delete state.leaves[person]; else state.leaves[person] = old;
     renderStats(); return;
   }
@@ -458,7 +470,7 @@ async function onLeaveChange(person, sel, td) {
   try {
     const { error } = await sb.from("leaves").insert({ day: dayIdx, user_id: pObj.id });
     if (error) { if (error.code === "23505") await alertDlg("قبلاً ثبت شده."); else await alertDlg("خطا: " + error.message); sel.value = ""; return; }
-    if (!state.leaves[person]) state.leaves[person] = {}; state.leaves[person][String(dayIdx)] = true; renderStats(); alertDlg("مرخصی ثبت شد.");
+    if (!state.leaves[person]) state.leaves[person] = {}; state.leaves[person][String(dayIdx)] = true; await sb.from("audit_logs").insert({ user_id: currentUser.id, action: "ثبت مرخصی", details: { target: person, day: dayIdx } }); renderStats(); alertDlg("مرخصی ثبت شد.");
   } catch (e) { await alertDlg("خطا: " + e.message); sel.value = ""; }
 }
 
@@ -564,12 +576,18 @@ function renderStaffList() {
   });
   l.querySelectorAll("input.req-input").forEach(inp => inp.addEventListener("change", async () => {
     const idx = +inp.dataset.idx, v = parseFloat(inp.value); if (isNaN(v) || v < 0) { inp.value = PERSONNEL[idx].req; return; }
-    const { error } = await sb.from("profiles").update({ required_hours: v }).eq("id", PERSONNEL[idx].id); if (error) { await alertDlg("خطا"); inp.value = PERSONNEL[idx].req; return; }
-    PERSONNEL[idx].req = v; renderAll();
+    const oldReq = PERSONNEL[idx].req;
+    const { error } = await sb.from("profiles").update({ required_hours: v }).eq("id", PERSONNEL[idx].id); 
+    if (error) { await alertDlg("خطا"); inp.value = oldReq; return; }
+    PERSONNEL[idx].req = v; 
+    await sb.from("audit_logs").insert({ user_id: currentUser.id, action: "تغییر ساعت موظفی", details: { target: PERSONNEL[idx].name, old: oldReq, new: v } });
+    renderAll();
   }));
   l.querySelectorAll("button.btn-del").forEach(b => b.addEventListener("click", async () => {
     const p = PERSONNEL[+b.dataset.del]; if (!await confirmDlg(`حذف ${p.name}؟`, true)) return;
-    await sb.from("profiles").delete().eq("id", p.id); await loadAll(); renderStaffList(); renderAll();
+    await sb.from("profiles").delete().eq("id", p.id); 
+    await sb.from("audit_logs").insert({ user_id: currentUser.id, action: "حذف پرسنل", details: { target: p.name } });
+    await loadAll(); renderStaffList(); renderAll();
   }));
 }
 function openLogs() { if (!isAdmin) return alertDlg("دسترسی غیرمجاز."); loadLogs(); document.getElementById("logsModal").classList.add("active"); }
@@ -581,8 +599,14 @@ async function loadLogs() {
     b.innerHTML = "<div style='display:flex;flex-direction:column;gap:8px;'>" + data.map(l => {
       const name = PERSONNEL.find(p => p.id === l.user_id)?.name || 'نامشخص', exactDate = formatDateTime(l.created_at);
       let color = "#64748b", bg = "rgba(0,0,0,0.05)";
-      if (l.action === 'ثبت شیفت') { color = "#15803d"; bg = "rgba(22,163,74,0.1)"; } else if (l.action === 'حذف شیفت') { color = "#991b1b"; bg = "rgba(220,38,38,0.1)"; } else if (l.action === 'ثبت مرخصی') { color = "#c2410c"; bg = "rgba(234,88,12,0.1)"; } else if (l.action === 'حذف مرخصی') { color = "#991b1b"; bg = "rgba(220,38,38,0.1)"; } else if (l.action === 'تغییر رمز عبور') { color = "#2563eb"; bg = "rgba(37,99,235,0.1)"; }
-      let details = ""; if (l.details) { if (l.details.zone) { details = `<span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;margin-right:4px;font-weight:700;">${l.details.zone}</span><span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;margin-right:4px;font-weight:700;">${l.details.type}</span><span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;font-weight:700;">روز ${l.details.day + 1}</span>`; } else if (l.details.day !== undefined) { details = `<span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;font-weight:700;">روز ${l.details.day + 1}</span>`; } else if (l.details.message) { details = `<span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;font-weight:700;">${l.details.message}</span>`; } }
+      if (l.action === 'ثبت شیفت') { color = "#15803d"; bg = "rgba(22,163,74,0.1)"; } else if (l.action === 'حذف شیفت') { color = "#991b1b"; bg = "rgba(220,38,38,0.1)"; } else if (l.action === 'ثبت مرخصی') { color = "#c2410c"; bg = "rgba(234,88,12,0.1)"; } else if (l.action === 'حذف مرخصی') { color = "#991b1b"; bg = "rgba(220,38,38,0.1)"; } else if (l.action === 'تغییر رمز عبور') { color = "#2563eb"; bg = "rgba(37,99,235,0.1)"; } else if (l.action === 'تغییر ساعت موظفی') { color = "#d97706"; bg = "rgba(217,119,6,0.1)"; } else if (l.action === 'حذف پرسنل') { color = "#991b1b"; bg = "rgba(220,38,38,0.1)"; }
+      let details = ""; if (l.details) { 
+        if (l.details.zone) { details = `<span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;margin-right:4px;font-weight:700;">${l.details.zone}</span><span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;margin-right:4px;font-weight:700;">${l.details.type}</span><span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;font-weight:700;">روز ${l.details.day + 1}</span>${l.details.target ? `<span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;font-weight:700;">برای ${l.details.target}</span>` : ''}`; } 
+        else if (l.details.day !== undefined) { details = `<span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;font-weight:700;">روز ${l.details.day + 1}</span>${l.details.target ? `<span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;font-weight:700;">برای ${l.details.target}</span>` : ''}`; } 
+        else if (l.details.message) { details = `<span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;font-weight:700;">${l.details.message}</span>`; } 
+        else if (l.details.old !== undefined) { details = `<span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;font-weight:700;">${l.details.target}</span><span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;margin-right:4px;font-weight:700;">از ${l.details.old} به ${l.details.new}</span>`; }
+        else if (l.details.target) { details = `<span style="font-size:11px;background:${bg};color:${color};padding:2px 8px;border-radius:4px;font-weight:700;">${l.details.target}</span>`; }
+      }
       return `<div style="display:flex;align-items:center;gap:12px;padding:12px;background:#f8fafc;border:1px solid var(--border);border-radius:8px;border-right:4px solid ${color};"><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:800;margin-bottom:6px;">${l.action} <span style="font-weight:500;color:var(--text-muted);font-size:11px;">توسط ${name}</span></div><div style="display:flex;flex-wrap:wrap;gap:4px;">${details}</div></div><div style="font-size:11px;color:var(--text-muted);white-space:nowrap;font-weight:700;background:#fff;padding:4px 8px;border-radius:4px;border:1px solid var(--border)">${exactDate}</div></div>`;
     }).join('') + "</div>";
   } catch (e) { b.innerHTML = "<p style='color:red;text-align:center;padding:20px;'>خطا: " + e.message + "</p>"; }
