@@ -38,7 +38,7 @@ var jalaali = (function() {
 </script>
 
 <script>
-  const APP_VERSION = "46.0.0"; 
+  const APP_VERSION = "50.0.0"; 
   if (localStorage.getItem('app_version') !== APP_VERSION) {
     if ('caches' in window) caches.keys().then(names => names.forEach(n => caches.delete(n)));
     localStorage.setItem('app_version', APP_VERSION);
@@ -278,17 +278,37 @@ function dialog(opts) { return new Promise(r => { const o = document.getElementB
 const alertDlg = m => dialog({ message: m }), confirmDlg = (m, d) => dialog({ message: m, confirm: true, danger: d }), promptDlg = (m, def) => dialog({ message: m, input: true, def: def });
 
 async function init() {
+  document.getElementById("loadingScreen").style.display = "flex";
+  document.getElementById("loginScreen").style.display = "none";
+  
+  const fallbackTimer = setTimeout(() => {
+    document.getElementById("loadingScreen").style.display = "none";
+    document.getElementById("loginScreen").style.display = "block";
+    document.getElementById("loginError").textContent = "اتصال به سرور کند است، لطفاً نام خود را انتخاب کنید.";
+    loadLoginList();
+  }, 3000);
+
   try {
     initBaseDate();
-    const zf = document.getElementById("zoneFilter"); ZONES.forEach(z => { const o = document.createElement("option"); o.value = z.name; o.textContent = z.name; zf.appendChild(o); });
-    // زمان‌بندی دقیق برای اتصال به دیتابیس
-    const timeout = new Promise(resolve => setTimeout(() => resolve({ data: { session: null }, timeout: true }), 3000));
-    const result = await Promise.race([sb.auth.getSession(), timeout]);
-    if (result.timeout) { document.getElementById("loadingScreen").style.display = "none"; document.getElementById("loginScreen").style.display = "block"; document.getElementById("loginError").textContent = "اتصال به سرور برقرار نشد. لطفاً اینترنت خود را بررسی کنید."; loadLoginList(); return; }
-    const { data: { session } } = result;
-    if (session && session.user) { const { data: p } = await sb.from("profiles").select("*").eq("id", session.user.id).single(); if (p) { currentUser = p; isAdmin = !!p.is_admin; await loadAll(); showMain(); return; } }
+    const zf = document.getElementById("zoneFilter"); 
+    zf.innerHTML = '<option value="all">همه خوابگاه‌ها</option>';
+    ZONES.forEach(z => { const o = document.createElement("option"); o.value = z.name; o.textContent = z.name; zf.appendChild(o); });
+    
+    const { data: { session } } = await sb.auth.getSession();
+    clearTimeout(fallbackTimer);
+    
+    if (session && session.user) { 
+      const { data: p } = await sb.from("profiles").select("*").eq("id", session.user.id).single(); 
+      if (p) { currentUser = p; isAdmin = !!p.is_admin; await loadAll(); showMain(); return; } 
+    }
     await loadLoginList();
-  } catch (e) { document.getElementById("loadingScreen").style.display = "none"; document.getElementById("loginScreen").style.display = "block"; document.getElementById("loginError").textContent = "خطا در اتصال به سرور."; loadLoginList(); }
+  } catch (e) { 
+    clearTimeout(fallbackTimer);
+    document.getElementById("loadingScreen").style.display = "none"; 
+    document.getElementById("loginScreen").style.display = "block"; 
+    document.getElementById("loginError").textContent = "خطا در اتصال به سرور."; 
+    loadLoginList(); 
+  }
 }
 async function loadLoginList() { try { const { data } = await sb.from("profiles").select("name,is_admin").order("name"); const s = document.getElementById("loginName"); s.innerHTML = '<option value="">انتخاب کنید...</option>'; (data || []).forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name + (p.is_admin ? " (مدیر)" : ""); s.appendChild(o); }); } catch(e){} document.getElementById("loadingScreen").style.display = "none"; document.getElementById("loginScreen").style.display = "block"; }
 function showMain() { document.getElementById("loginScreen").style.display = "none"; document.getElementById("mainApp").style.display = "block"; document.body.classList.toggle("is-admin", isAdmin); document.getElementById("currentUserName").textContent = currentUser.name; renderAll(); }
