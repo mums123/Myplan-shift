@@ -12,7 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jalaali-js@1.2.0/dist/jalaali.min.js"></script>
 
 <script>
-  const APP_VERSION = "35.0.0"; 
+  const APP_VERSION = "36.0.0"; 
   if (localStorage.getItem('app_version') !== APP_VERSION) {
     if ('caches' in window) caches.keys().then(names => names.forEach(n => caches.delete(n)));
     localStorage.setItem('app_version', APP_VERSION);
@@ -228,7 +228,6 @@ const emailMap = {
   "خانم حشمتی":"heshmati@dorm.local", "کاربر مهمان":"guest@dorm.local", "کاربر شیفت":"shift@dorm.local"
 };
 
-// لیست دقیق ساعت موظفی
 const FIXED_REQUIRED_HOURS = {
   "خانم شکیب": 184, "خانم امیری": 184, "خانم چراغ چشم": 184, 
   "خانم براتی": 184, "خانم رحمانی": 184, "خانم رنجبر": 184,
@@ -453,7 +452,6 @@ function renderStats() {
       } 
       else if (t === "شب") {
         if (isThursday) {
-          // شب پنجشنبه
           if (is184) {
             const normalPart = 4.5;
             const holidayPart = 7.5 * 1.5;
@@ -463,7 +461,6 @@ function renderStats() {
             stats[p.id].n += base;
           }
         } else if (isFriday) {
-          // شب جمعه
           if (is184) {
             const holidayPart = 4.5 * 1.5;
             const normalPart = 7.5;
@@ -562,7 +559,6 @@ function openExcel() {
   for (let d = 0; d < DAYS; d++) { const info = getDayInfo(d); const rowBg = info.isFriday ? "FEF3C7" : "FFFFFF"; const dayFontColor = info.isFriday ? "DC2626" : "1E293B"; styleCell(ws1, d + 2, 0, { font: { name: "Vazirmatn", sz: 11, bold: true, color: { rgb: dayFontColor } }, fill: { fgColor: { rgb: rowBg } }, border: ST.border, alignment: ST.alignCenter }); styleCell(ws1, d + 2, 1, { font: { name: "Vazirmatn", sz: 10, color: { rgb: "64748B" } }, fill: { fgColor: { rgb: rowBg } }, border: ST.border, alignment: ST.alignCenter }); for (let c = 2; c < row2.length; c++) { styleCell(ws1, d + 2, c, { font: ST.fontBold, fill: { fgColor: { rgb: rowBg } }, border: ST.border, alignment: ST.alignCenter }); } }
   ws1["!freeze"] = { xSplit: 2, ySplit: 2 }; XLSX.utils.book_append_sheet(wb, ws1, selectedZone === "all" ? "کل شیفت‌ها" : `شیفت ${selectedZone}`);
   
-  // شیت آمار اکسل (با منطق جدید)
   const stats = {};
   PERSONNEL.forEach(p => { stats[p.id] = { m: 0, e: 0, n: 0, h: 0, leave: 0 }; });
   Object.keys(state.leaves).forEach(perName => { const per = PERSONNEL.find(x => x.name === perName); if (per && stats[per.id]) stats[per.id].leave = Object.keys(state.leaves[perName]).length * 7.33; });
