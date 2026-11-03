@@ -38,7 +38,7 @@ var jalaali = (function() {
 </script>
 
 <script>
-  const APP_VERSION = "52.0.0"; 
+  const APP_VERSION = "53.0.0"; 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(function(registrations) {
       for(let registration of registrations) { registration.unregister(); }
@@ -141,9 +141,8 @@ table.stats-table th { background: var(--bg-header); color: #fff; }
 .btn-full:hover { background: var(--primary-hover); }
 .error-msg { color: var(--danger); font-size: 12.5px; text-align: center; margin-top: 12px; font-weight: 600; min-height: 18px; }
 .support-text { text-align: center; font-size: 11.5px; color: var(--text-muted); margin-top: 20px; padding-top: 16px; border-top: 1px dashed var(--border); }
-#loadingScreen { position: fixed; inset: 0; background: var(--bg-body); z-index: 9999; display: flex; justify-content: center; align-items: center; flex-direction: column; }
-.spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
-@keyframes spin { to { transform: rotate(360deg); } }
+#loadingScreen { display: none; } /* صفحه در حال اتصال حذف شد */
+.spinner { display: none; }
 .staff-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #f8fafc; border-radius: var(--radius-sm); margin-bottom: 8px; border: 1px solid var(--border); }
 .staff-item input { width: 70px; padding: 6px; border: 1px solid var(--border); border-radius: 4px; text-align: center; font-family: inherit; color: var(--text-main); }
 .btn-del { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 700; font-size: 12px; font-family: inherit; }
@@ -159,11 +158,6 @@ table.stats-table th { background: var(--bg-header); color: #fff; }
 </style>
 </head>
 <body>
-
-<div id="loadingScreen">
-  <div class="spinner"></div>
-  <div style="font-weight:600; color:var(--text-muted);">در حال اتصال...</div>
-</div>
 
 <div id="loginScreen" style="display:none;">
   <div class="login-container">
@@ -290,39 +284,38 @@ function dialog(opts) { return new Promise(r => { const o = document.getElementB
 const alertDlg = m => dialog({ message: m }), confirmDlg = (m, d) => dialog({ message: m, confirm: true, danger: d }), promptDlg = (m, def) => dialog({ message: m, input: true, def: def });
 
 async function init() {
-  document.getElementById("loadingScreen").style.display = "flex";
-  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("loginScreen").style.display = "block";
   
-  const fallbackTimer = setTimeout(() => {
-    document.getElementById("loadingScreen").style.display = "none";
-    document.getElementById("loginScreen").style.display = "block";
-    document.getElementById("loginError").textContent = "اتصال به سرور کند است، لطفاً نام خود را انتخاب کنید.";
-    loadLoginList();
-  }, 3000);
-
   try {
     initBaseDate();
     const zf = document.getElementById("zoneFilter"); 
-    zf.innerHTML = '<option value="all">همه خوابگاه‌ها</option>';
-    ZONES.forEach(z => { const o = document.createElement("option"); o.value = z.name; o.textContent = z.name; zf.appendChild(o); });
-    
+    if (zf) {
+      zf.innerHTML = '<option value="all">همه خوابگاه‌ها</option>';
+      ZONES.forEach(z => { const o = document.createElement("option"); o.value = z.name; o.textContent = z.name; zf.appendChild(o); });
+    }
+
     const { data: { session } } = await sb.auth.getSession();
-    clearTimeout(fallbackTimer);
     
     if (session && session.user) { 
       const { data: p } = await sb.from("profiles").select("*").eq("id", session.user.id).single(); 
-      if (p) { currentUser = p; isAdmin = !!p.is_admin; await loadAll(); showMain(); return; } 
+      if (p) { 
+        currentUser = p; 
+        isAdmin = !!p.is_admin; 
+        await loadAll(); 
+        showMain(); 
+        return; 
+      } 
     }
+    
     await loadLoginList();
+    
   } catch (e) { 
-    clearTimeout(fallbackTimer);
-    document.getElementById("loadingScreen").style.display = "none"; 
     document.getElementById("loginScreen").style.display = "block"; 
-    document.getElementById("loginError").textContent = "خطا در اتصال به سرور."; 
+    document.getElementById("loginError").textContent = "اتصال به سرور کند است. لطفاً نام خود را انتخاب کنید."; 
     loadLoginList(); 
   }
 }
-async function loadLoginList() { try { const { data } = await sb.from("profiles").select("name,is_admin").order("name"); const s = document.getElementById("loginName"); s.innerHTML = '<option value="">انتخاب کنید...</option>'; (data || []).forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name + (p.is_admin ? " (مدیر)" : ""); s.appendChild(o); }); } catch(e){} document.getElementById("loadingScreen").style.display = "none"; document.getElementById("loginScreen").style.display = "block"; }
+async function loadLoginList() { try { const { data } = await sb.from("profiles").select("name,is_admin").order("name"); const s = document.getElementById("loginName"); s.innerHTML = '<option value="">انتخاب کنید...</option>'; (data || []).forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name + (p.is_admin ? " (مدیر)" : ""); s.appendChild(o); }); } catch(e){} document.getElementById("loginScreen").style.display = "block"; }
 function showMain() { document.getElementById("loginScreen").style.display = "none"; document.getElementById("mainApp").style.display = "block"; document.body.classList.toggle("is-admin", isAdmin); document.getElementById("currentUserName").textContent = currentUser.name; renderAll(); }
 async function doLogin() {
   const name = document.getElementById("loginName").value, pass = document.getElementById("loginPassword").value, err = document.getElementById("loginError");
